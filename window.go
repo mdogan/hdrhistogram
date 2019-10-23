@@ -36,6 +36,14 @@ func (w *WindowedHistogram) Merge() *Histogram {
 	return w.m
 }
 
+// Merge merges the recorded values from all the
+// sections of the window to the given histogram.
+func (w *WindowedHistogram) MergeTo(hist *Histogram) {
+	for _, h := range w.h {
+		hist.Merge(&h)
+	}
+}
+
 // Rotate resets the oldest histogram and rotates it to be used as the current
 // histogram.
 func (w *WindowedHistogram) Rotate() {
