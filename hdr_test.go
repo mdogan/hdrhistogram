@@ -164,7 +164,7 @@ func TestMin(t *testing.T) {
 func TestByteSize(t *testing.T) {
 	h := hdrhistogram.New(1, 100000, 3)
 
-	if v, want := h.ByteSize(), 65604; v != want {
+	if v, want := h.ByteSize(), 65600; v != want {
 		t.Errorf("ByteSize was %v, but expected %d", v, want)
 	}
 }

@@ -6,6 +6,7 @@ package hdrhistogram
 import (
 	"fmt"
 	"math"
+	"math/bits"
 )
 
 // A Bracket is a part of a cumulative distribution.
@@ -36,7 +37,6 @@ type Histogram struct {
 	subBucketMask               int64
 	subBucketCount              int32
 	bucketCount                 int32
-	countsLen                   int32
 	totalCount                  int64
 	counts                      []int64
 }
@@ -49,7 +49,7 @@ func New(minValue, maxValue int64, sigfigs int) *Histogram {
 	}
 
 	largestValueWithSingleUnitResolution := 2 * math.Pow10(sigfigs)
-	subBucketCountMagnitude := int32(math.Ceil(math.Log2(float64(largestValueWithSingleUnitResolution))))
+	subBucketCountMagnitude := int32(math.Ceil(math.Log2(largestValueWithSingleUnitResolution)))
 
 	subBucketHalfCountMagnitude := subBucketCountMagnitude
 	if subBucketHalfCountMagnitude < 1 {
@@ -89,7 +89,6 @@ func New(minValue, maxValue int64, sigfigs int) *Histogram {
 		subBucketMask:               subBucketMask,
 		subBucketCount:              subBucketCount,
 		bucketCount:                 bucketCount,
-		countsLen:                   countsLen,
 		totalCount:                  0,
 		counts:                      make([]int64, countsLen),
 	}
@@ -101,7 +100,7 @@ func New(minValue, maxValue int64, sigfigs int) *Histogram {
 // N.B.: This does not take into account the overhead for slices, which are
 // small, constant, and specific to the compiler version.
 func (h *Histogram) ByteSize() int {
-	return 6*8 + 5*4 + len(h.counts)*8
+	return 6*8 + 4*4 + len(h.counts)*8
 }
 
 // Merge merges the data stored in the given histogram with the receiver,
@@ -229,7 +228,7 @@ func (h *Histogram) RecordCorrectedValue(v, expectedInterval int64) error {
 // the value is out of range.
 func (h *Histogram) RecordValues(v, n int64) error {
 	idx := h.countsIndexFor(v)
-	if idx < 0 || int(h.countsLen) <= idx {
+	if idx < 0 || len(h.counts) <= idx {
 		return fmt.Errorf("value %d is too large to be recorded", v)
 	}
 	h.counts[idx] += n
@@ -331,7 +330,7 @@ func (h *Histogram) Equals(other *Histogram) bool {
 		h.subBucketMask != other.subBucketMask,
 		h.subBucketCount != other.subBucketCount,
 		h.bucketCount != other.bucketCount,
-		h.countsLen != other.countsLen,
+		len(h.counts) != len(other.counts),
 		h.totalCount != other.totalCount:
 		return false
 	default:
@@ -361,8 +360,7 @@ func Import(s *Snapshot) *Histogram {
 	h := New(s.LowestTrackableValue, s.HighestTrackableValue, int(s.SignificantFigures))
 	h.counts = s.Counts
 	totalCount := int64(0)
-	for i := int32(0); i < h.countsLen; i++ {
-		countAtIndex := h.counts[i]
+	for _, countAtIndex := range h.counts {
 		if countAtIndex > 0 {
 			totalCount += countAtIndex
 		}
@@ -441,12 +439,11 @@ func (h *Histogram) countsIndex(bucketIdx, subBucketIdx int32) int32 {
 
 func (h *Histogram) getBucketIndex(v int64) int32 {
 	pow2Ceiling := bitLen(v | h.subBucketMask)
-	return int32(pow2Ceiling - int64(h.unitMagnitude) -
-		int64(h.subBucketHalfCountMagnitude+1))
+	return int32(pow2Ceiling - h.unitMagnitude - int64(h.subBucketHalfCountMagnitude+1))
 }
 
 func (h *Histogram) getSubBucketIdx(v int64, idx int32) int32 {
-	return int32(v >> uint(int64(idx)+int64(h.unitMagnitude)))
+	return int32(v >> uint(int64(idx)+h.unitMagnitude))
 }
 
 func (h *Histogram) countsIndexFor(v int64) int {
@@ -542,23 +539,5 @@ func (p *pIterator) next() bool {
 }
 
 func bitLen(x int64) (n int64) {
-	for ; x >= 0x8000; x >>= 16 {
-		n += 16
-	}
-	if x >= 0x80 {
-		x >>= 8
-		n += 8
-	}
-	if x >= 0x8 {
-		x >>= 4
-		n += 4
-	}
-	if x >= 0x2 {
-		x >>= 2
-		n += 2
-	}
-	if x >= 0x1 {
-		n++
-	}
-	return
+	return int64(bits.Len64(uint64(x)))
 }
